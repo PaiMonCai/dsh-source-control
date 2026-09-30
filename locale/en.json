@@ -1,0 +1,4 @@
+{
+  "title": "Source Control",
+  "description": "Manage the Session's Git repository from the Web UI: status, staging, discarding, committing, diffs, and history. Commits are local; no network operation is offered."
+}

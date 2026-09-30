@@ -1,0 +1,15 @@
+# Mount the Source Control bundle: one Host plugin owning the git capability and
+# the authenticated /api/dsh-source-control/* routes its browser half calls.
+#
+# Read the package's README before changing limits. `maxOutputBytes` bounds one
+# git command's collected stdout; a larger diff refuses instead of truncating,
+# because a silently cut diff reads as the whole change.
+
+- insert:
+    - id: source-control
+      name: dsh-source-control
+      config:
+        timeoutMs: 30000
+        maxOutputBytes: 8388608
+        maxDiffLines: 20000
+        maxLogEntries: 50
