@@ -1,6 +1,6 @@
 {
   "name": "dsh-source-control",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "VS Code-style Source Control for the DeepSeek Harness Web UI: a right-sidebar tab and a main page for status, staging, discarding, committing, diffs, and history of the Session's repository.",
   "type": "module",
