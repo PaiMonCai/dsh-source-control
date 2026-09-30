@@ -1,0 +1,61 @@
+name: CI
+
+# Every push and pull request: does the package still hold together?
+# This package has no compile step — it ships the JavaScript it runs — so the
+# useful signal is the verification suites plus the release gate, not a build.
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*'] # a version tag runs release.yml instead
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is 20.3 (AbortSignal.any, the newest API in the package).
+        # It is spelled `20.3` rather than `20` so the floor's minor line is what
+        # is tested; pinning exactly 20.3 would redden on an unrelated patch
+        # rebuild of a 2023 release. `engines.node` carries the precise bound.
+        node: ['20.3', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Show the environment
+        run: |
+          node --version
+          git --version
+
+      - name: Assert the runtime floor
+        # The suites exercise these on every run, so a wrong Node version fails
+        # loudly rather than manufacturing failures that look like logic bugs.
+        run: |
+          node -e "
+            for (const [name, value] of [['AbortSignal.any', AbortSignal.any], ['AbortSignal.timeout', AbortSignal.timeout]]) {
+              if (typeof value !== 'function') throw new Error(name + ' is missing on this Node');
+            }
+            console.log('runtime floor satisfied on', process.version);
+          "
+
+      - name: Run every verification suite
+        # The suites drive real git repositories and need no dependencies, so
+        # there is nothing to install first.
+        run: npm test
+
+      - name: Check the package installs cleanly
+        run: npm install --no-audit --no-fund

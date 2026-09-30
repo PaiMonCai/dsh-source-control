@@ -1,0 +1,101 @@
+name: Release
+
+# Publishes a GitHub Release with the installable bundle tarball attached.
+#
+# This package has no build step, so "release" here means: prove the tree is
+# sound, pack exactly what a consumer installs, and attach it. The tag's version
+# must match package.json, so a release can never disagree with the code it names.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the Release and upload its asset
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # A release is only as good as the tree it points at, so the full suite runs
+      # again here rather than trusting that CI passed on some earlier commit.
+      - name: Verify
+        run: npm test
+
+      - name: Check the tag matches package.json
+        id: version
+        run: |
+          set -euo pipefail
+          declared="$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$declared" != "$tag" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${declared}"
+            exit 1
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+          echo "tag ${GITHUB_REF_NAME} matches package.json ${declared}"
+
+      - name: Pack the installable bundle
+        id: pack
+        run: |
+          set -euo pipefail
+          # Read the filename and integrity from npm itself rather than assuming
+          # a naming convention.
+          npm pack --json > pack.json
+          filename="$(node -p "require('./pack.json')[0].filename")"
+          integrity="$(node -p "require('./pack.json')[0].integrity")"
+          shasum="$(node -p "require('./pack.json')[0].shasum")"
+          files="$(node -p "require('./pack.json')[0].files.length")"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
+          echo "shasum=$shasum" >> "$GITHUB_OUTPUT"
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "packed $filename (${files} files)"
+          rm -f pack.json
+
+      - name: Write the release notes
+        run: |
+          set -euo pipefail
+          cat > notes.md <<NOTES
+          Bundle tarball for \`dsh-source-control@${{ steps.version.outputs.version }}\`.
+
+          ## Install
+
+          \`\`\`bash
+          plugin_manager install_bundle /absolute/path/to/dsh-source-control
+          \`\`\`
+
+          The package directory must stay where it was installed: \`plugin_manager\`
+          links it into the profile, so moving or deleting it breaks the bundle.
+          If the profile was already running, toggle the bundle off and on
+          (\`plugin_manager set_bundle\`) to apply it live.
+
+          ## Verify what you downloaded
+
+          \`\`\`
+          sha1:    ${{ steps.pack.outputs.shasum }}
+          shasum:  ${{ steps.pack.outputs.integrity }}
+          files:   ${{ steps.pack.outputs.files }}
+          \`\`\`
+
+          > The workflow's \`npm test\` run passed on this commit before anything was
+          > attached. That is the whole verification story for this package: there is
+          > no build step, so the tag names exactly the JavaScript that runs.
+          NOTES
+
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.pack.outputs.filename }}" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --verify-tag

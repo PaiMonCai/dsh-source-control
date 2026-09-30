@@ -226,10 +226,13 @@ React panel ──fetch('/api/source-control/<op>?sessionId=…|repo=…')
   Each surface renders inside an error boundary so a defect shows a message
   instead of blanking the panel.
 
-## Verification
+## Verification, CI, and releases
 
-`verify/` drives the real code against real scratch repositories — no mocks of
-the behaviour under test.
+### Running the suites
+
+`npm test` runs every suite and prints one combined result. The suites drive the
+real code against real scratch repositories — no mocks of the behaviour under
+test — and need **no dependencies**, so a fresh checkout runs them immediately.
 
 ```bash
 node verify/git-layer.mjs      # git operations, path guard, unborn branch, pathspec literals
@@ -252,3 +255,37 @@ running Host.
 Not covered by them: the browser-session fence (assert with an unauthenticated
 request — expect `401`, and with a foreign `Host` header — expect `403`) and
 visual rendering, which needs a connected page.
+
+### There is no build step
+
+This package ships the JavaScript it runs. There is no compilation, no
+bundler, and no `devDependencies`, so "building" it means nothing — a `build`
+script here would only be theatre. The workflows therefore do not build:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | every push and PR | `npm test` on Node 20.3, 22, and 24; asserts the runtime floor; checks `npm install` succeeds |
+| `release.yml` | a `v*` tag | `npm test`, checks the tag matches `package.json`, runs `npm pack`, and attaches the tarball to a GitHub Release with its checksums |
+
+The floor is **Node 20.3**: the git runner uses `AbortSignal.any`, the newest API
+anywhere in the package (`engines.node` states the same bound).
+
+### Cutting a release
+
+```bash
+# 1. bump the version
+npm version patch          # or minor / major; this commits and tags
+# 2. push the commit and the tag
+git push --follow-tags
+```
+
+`release.yml` refuses to publish when the tag disagrees with `package.json`, so a
+release can never name a version the code does not carry. The attached tarball is
+the installable bundle; its `sha1` and `sha512` are printed in the release notes.
+
+Verify locally before tagging:
+
+```bash
+npm test
+npm pack --dry-run   # confirm the file list a consumer receives
+```

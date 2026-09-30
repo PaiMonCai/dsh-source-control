@@ -1,0 +1,6 @@
+# Installed dependencies. The verification suites need none, so this directory
+# only ever appears in a working copy.
+node_modules/
+
+# `npm pack` output, whenever it is produced by hand rather than by the workflow.
+*.tgz
