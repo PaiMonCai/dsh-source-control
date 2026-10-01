@@ -11,7 +11,7 @@
  *     node verify/tools.mjs
  */
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -204,6 +204,7 @@ const otherStatus = await tool.execute({ action: 'status' }, exec('session-other
 check(otherStatus.summary.includes('elsewhere.txt') || otherStatus.summary.includes('sneaky.txt'), 'another Session reads its own repository', otherStatus.summary);
 await rejects(() => tool.execute({ action: 'status' }, exec('session-no-cwd')), 'session/no-workspace', 'a Session without a working directory is refused');
 await rejects(() => tool.execute({ action: 'status' }, exec('nope')), 'session/unknown', 'an unknown Session is refused');
+await rejects(() => service.status({}), 'session/required', 'a request with no selector is refused as a missing Session, not as a missing repository');
 // The registry only attaches a structured code to its own HarnessError, which a
 // workspace-linked package cannot import, so the code travels in the message.
 const coded = await tool
@@ -211,6 +212,31 @@ const coded = await tool
   .then(() => null)
   .catch((error) => error.message);
 check(typeof coded === 'string' && coded.startsWith('session/unknown:'), 'a refusal carries its code in the message', coded);
+
+console.log('\n## an explicit-repo read cannot repoint the Session cache');
+// The main page legitimately names a repository explicitly while carrying the
+// Session id. That must not publish the named repository as this Session's own:
+// the next Session-only call — including an agent mutation — would otherwise
+// read and write a repository no Session claims.
+await writeFile(join(repo, 'third.txt'), 'third\n');
+await writeFile(join(otherRepo, 'elsewhere.txt'), 'elsewhere\nchanged\n');
+const explicitStatusRoute = routes.get(`${ROUTE_PREFIX}/status`);
+const explicitRead = await explicitStatusRoute.handle({ url: new URL(`http://x${ROUTE_PREFIX}/status?sessionId=${SESSION_ID}&repo=${encodeURIComponent(otherRepo)}`), body: {}, signal: undefined });
+check(explicitRead.repository.root === await realpath(otherRepo), 'an explicit read really addresses the named repository', explicitRead.repository.root);
+const sessionOnly = await explicitStatusRoute.handle({ url: new URL(`http://x${ROUTE_PREFIX}/status?sessionId=${SESSION_ID}`), body: {}, signal: undefined });
+check(sessionOnly.repository.root === await realpath(repo), 'the same Session still resolves its own repository', sessionOnly.repository.root);
+const stagedOwn = await tool.execute({ action: 'stage', paths: ['third.txt'] }, exec());
+check(stagedOwn.summary.includes('Staged 1'), 'the agent staged inside its own Session repository', stagedOwn.summary);
+const otherSession = await tool.execute({ action: 'status' }, exec('session-other'));
+check(otherSession.summary.includes('elsewhere.txt') && !otherSession.summary.includes('third.txt'), 'the explicitly read repository kept its own separate state', otherSession.summary);
+await tool.execute({ action: 'unstage', paths: ['third.txt'] }, exec());
+await rm(join(repo, 'third.txt'));
+// The cached fact is bound to the cwd it was resolved for, so a Session whose
+// working directory moves cannot keep reading the previous repository.
+sessions[0].header.cwd = otherRepo;
+const movedSession = await explicitStatusRoute.handle({ url: new URL(`http://x${ROUTE_PREFIX}/status?sessionId=${SESSION_ID}`), body: {}, signal: undefined });
+check(movedSession.repository.root === await realpath(otherRepo), 'a Session that changes working directory resolves the new repository', movedSession.repository.root);
+sessions[0].header.cwd = repo;
 
 console.log('\n## arguments');
 await rejects(() => readArguments({}), 'tool/invalid-arguments', 'a missing action is refused');

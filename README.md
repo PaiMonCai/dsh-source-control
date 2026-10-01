@@ -1,93 +1,79 @@
 # dsh-source-control
 
-VS Code-style **Source Control** for the DeepSeek Harness Web UI: manage the Git
-repository of a Session's working directory without leaving the app.
+为 DeepSeek Harness Web UI 提供 VS Code 风格的**源代码管理（Source Control）**：无需离开应用即可管理某个 Session 工作目录的 Git 仓库。
 
-Two surfaces over one panel:
+同一个面板之上有两个界面：
 
-- a **Source Control tab** in the right sidebar, whose repository follows the
-  Session the tab lives in, and
-- a **Source Control page** in the main column, with its own repository picker
-  and the commit history, reached from a sidebar icon.
+- 右侧边栏中的一个**源代码管理标签页（Source Control tab）**，其仓库跟随该标签页所在的 Session，以及
+- 主区域中的一个**源代码管理页面（Source Control page）**，带有自己的仓库选择器和提交历史，通过侧边栏图标进入。
 
-Both offer: branch display with ahead/behind counts, Staged / Changes /
-Untracked / Conflicts groups, per-file stage, unstage, discard (with a
-confirmation dialog), **per-hunk** stage, unstage, and discard from the diff
-viewer, a diff viewer with old/new line numbers, a commit message box, and
-commit history.
+两者都提供带 ahead/behind 计数的分支显示、文件列表上方的提交消息输入框、可折叠的**已暂存的更改 / 更改 / 合并冲突（Staged Changes / Changes / Merge Conflicts）**分组、针对单个文件的暂存、取消暂存和放弃更改（带确认对话框），以及位于分支和更多操作控件之后的显式 **Fetch / Pull / Push**。未跟踪的文件以 `U` 徽标出现在**更改**中；文件名优先，目录次之，状态徽标和悬停/聚焦操作位于右侧。
 
-## Agent tool
+主页面是一个工作台：左侧是源代码管理导航器，右侧是差异编辑器。拖动它们之间的分隔条可改变导航器宽度。打开差异时列表保持可见，并标记所选行。已更改的文件可以筛选，并以列表或目录树的形式显示。
 
-`source_control` exposes the same operations to the agent, through the same
-service methods the UI calls — one implementation, two callers:
+提交图在两个界面的更改列表下方都可用。拖动其水平分隔条可改变相对高度；接近常见的常用位置时会吸附，拖到底部会将其折叠，双击会重置该分隔。分隔条也支持键盘调整。各区域独立滚动。在小屏幕上，页面导航器与编辑器垂直堆叠；紧凑标签页保持其 列表 → 差异 → Back 的流程。shell 现有的外层边栏分隔条继续负责右侧边栏的宽度。
+
+提交图的边来自实际的父提交，而不是历史列表的顺序。本地/远程分支和标签都有标注。选中一个提交可查看其完整消息和已更改文件，然后打开一个**只读的历史差异**。根提交、合并提交、重命名和删除文件的比较使用第一父提交的更改（根提交则使用空树）；历史视图从不提供对工作区的写入。
+
+差异会显示旧/新行号、工作区/索引一侧，以及对已跟踪、无冲突文件的**按块（per-hunk）**暂存、取消暂存和经确认的放弃更改。未跟踪的文件保留整文件控件。有冲突的路径会被列出，以便冲突可见，但它不带有暂存或放弃控件：命令层无法对未合并的路径执行操作，而解决冲突不属于此面板的范围。提交只使用已暂存的索引；**Ctrl/Cmd+Enter** 与按钮遵循相同的可用性和单次写入防护。切换主页面仓库会重置所选文件、提交草稿和分组状态，而不是把它们带到另一个仓库。
+
+## Agent 工具
+
+`source_control` 通过 UI 调用的同一批服务方法，把本地操作子集暴露给 agent——一份实现，两个调用方。分支变更和远程同步仍是仅限人工的 UI 操作：
 
 | | |
 |---|---|
-| Actions | `status`, `stage`, `unstage`, `diff`, `commit` |
-| Scope | the **calling agent's own Session working directory**; there is no repository argument, so it cannot be pointed at another checkout |
-| Not available | `discard` — irreversible, so it stays a human-only action in the UI |
+| 操作 | `status`, `stage`, `unstage`, `diff`, `commit` |
+| 范围 | **调用 agent 自己 Session 的工作目录**；没有仓库参数，因此无法指向另一个检出 |
+| 不可用 | `discard`——不可逆，因此在 UI 中仍是仅限人工的操作 |
 
-`diff` returns one file's comparison — hunk headers verbatim, `+`/`-`/space
-prefixes kept — so the agent can read a change before writing a commit message.
-Past `MAX_DIFF_LINES` (500) the rest is cut and the cut is **stated with its
-count**, because a silently shortened diff reads as the whole change.
+`diff` 返回单个文件的比较结果——块头部原样保留，`+`/`-`/空格前缀保留——因此 agent 可以在编写提交消息前读取某个更改。超过 `MAX_DIFF_LINES`（500）后，其余内容会被切掉，并且这次截断会**连同数量一起说明**，因为一个被静默缩短的差异读起来会像是完整的更改。
 
-It is registered through an optional inject, so a composition without the tools
-registry still loads the plugin and simply has no agent-facing surface.
+它通过一个可选的 inject 注册，因此即使某个组合没有 tools registry，插件仍会加载，只是没有面向 agent 的接口。
 
-A refusal reaches the model with its code prefixed to the message
-(`repo/not-a-repository: …`). The tool registry attaches a structured `code` only
-to its own `HarnessError`, which this package cannot import — it is installed
-from the workspace as a `link:`, so a bare `@deepseek-ai/...` specifier would
-resolve against the workspace instead of the profile. The HTTP routes keep their
-structured envelope untouched.
+拒绝会以消息前加上其 code 的形式到达模型（`repo/not-a-repository: …`）。tool registry 只给自己的 `HarnessError` 附加结构化的 `code`，而本包无法导入它——本包是作为 `link:` 从工作区安装的，所以裸的 `@deepseek-ai/...` specifier 会在工作区而非 profile 中解析。HTTP 路由的结构化信封保持不变。
 
-## Scope boundary
+## 范围边界
 
-**Commits are local.** There is no `fetch`, `pull`, `push`, `remote`, or `clone`
-anywhere in this package — no route and no code path — so nothing here can
-contact a network or touch a remote. Adding one is a deliberate design change,
-not a configuration toggle.
+**提交是本地操作；同步是显式的。** 只有当人工通过已认证的 POST 路由调用 **Fetch**、**Pull** 或 **Push** 时，才会发生 Git 传输。读取状态、分支或提交图从不自动获取，面向 agent 的工具也无法执行远程操作。有两类本地程序在这道栅栏之外，这里明确指出而不是留作隐含：配置的 clean/smudge 过滤器（见下文）以及仓库自身的钩子，后者会运行，因为 commit 有意不使用 `--no-verify`。
 
-Staging is **whole-file**. Per-hunk staging, amend, rebase, merge, stash, and
-branch/tag operations are out of scope.
+仅限本地是强制执行的，而不是假定的。其他所有 Git 调用都在 `protocol.allow=never` 和 `GIT_NO_LAZY_FETCH=1` 下运行，因此**部分克隆（promisor）**无法让一次读取去获取缺失的对象——一次读取要么从本地对象作答，要么以 `git/object-unavailable` 拒绝。历史读取还会在禁用替换对象、关闭签名显示的情况下运行，因此 `refs/replace` 条目无法改写精确的提交 ID，宿主的 `log.showSignature` 设置也无法把签名程序的输出注入到机器解析的记录中。提交 ID 必须是仓库自身格式中精确的完整对象 ID：SHA-256 ID 的 40 字符前缀会被拒绝。
 
-## Install
+有一处边界仍在此控制之外：诸如 **Git LFS** 的已配置 clean/smudge 过滤器是 Git 在 `add`/`switch` 期间运行的本地程序，而该程序可能联系其自己的服务器。禁用它会让一个期望真实文件内容的工作区损坏，因此插件保持过滤器启用，并且不声称它们无法访问网络。
+
+分支选择器可以切换已知的本地分支、在当前提交处创建分支，或从已知的远程跟踪分支创建本地跟踪分支。切换、创建分支和拉取要求工作区完全干净，包括未跟踪文件。没有自动 stash、放弃更改或强制切换。
+
+- **Fetch** 更新已配置远程的引用，但不更新工作区文件，也不递归获取子模块。
+- **Pull** 是**仅快进**。出现分叉时会拒绝，而不是自动合并或变基。请选择明确的目标或使用当前上游。
+- **Push** 以明确的、非强制的 refspec 发送当前本地分支。首次推送需要已确认的远程/分支目标以及上游设置。不提供强制、镜像、删除或标签推送。
+
+只接受已配置的现有远程名称；调用方不能提交远程 URL 或 shell 命令。拉取/推送会携带操作对话框打开时捕获的源分支；排入队列的分支变更会导致拒绝，而不是把过期的目标重新解释为针对新的源。它们的默认目标来自分支真正的上游（`%(upstream:remotename)` 加上 `%(upstream:remoteref)`），而不是缩写形式的 `origin/main` 显示名，因此一个被修剪或从未获取过的跟踪引用无法悄悄地把推送重定向到第一个已配置的远程。如果该上游远程已不存在，对话框会显示它、拒绝提交它，并等待一个刻意的选择。`.` 上游只跟踪本地分支：首次远程推送仍会要求设置上游。Git 使用宿主侧凭据。浏览器中不存在凭据编辑器或令牌存储；交互式提示被禁用，带凭据的诊断信息会被脱敏——URL userinfo（包括包含 `/` 或 `@` 的密码，以及不带点的主机名）、整个查询字符串、`api-key=…` 或 `X-Amz-Signature=…` 这类以 secret 命名的赋值、`Basic`/`Bearer`/`Digest` 值，以及 JWT。脱敏的范围是有意限定的：**无标签的不透明 blob** 会被放过，因为任何宽到足以捕获它的规则同时也会毁掉普通诊断信息（绝对路径、冲突路径、引用名，以及恰好以 `=` 结尾的文件名）。承诺对它脱敏就意味着经常隐藏那句话——它说明出了什么错。认证、传输或主机密钥失败会被报告，而不是被绕过。支持标准 SSH 配置、密钥、agent 和 known-hosts。使用自定义 `core.sshCommand`、`GIT_SSH_COMMAND` 或 `GIT_SSH` 包装器的 SSH 端点会被明确拒绝：插件无法在不悄悄替换其身份语义的情况下保证批量认证。请改为在宿主的 SSH 配置中配置标准 SSH 身份。
+
+所有由 service 负责的变更操作，包括暂存和提交，都按规范化仓库根（canonical repository root）串行化。这不会把外部 Git 进程锁在外面。显式指定某个仓库的请求绝不会在 Session 缓存中发布为调用 Session 自己的仓库，因此之后仅针对 Session 的调用——包括 agent 变更——无法被重定向到它那里。暂存支持**整文件**和**已跟踪更改中的单个块**。克隆、删除分支、reset、强制推送、amend、rebase、merge、stash 管理和标签操作仍不在范围内。验证使用一次性的本地仓库和裸远程，绝不使用用户真实的远程。
+
+## 安装
 
 ```
 plugin_manager install_bundle /workspace/dsh-source-control
 ```
 
-> The package directory must stay where it was installed: `plugin_manager` links
-> it into the profile, so moving or deleting it breaks the bundle.
+> 包目录必须留在它被安装的位置：`plugin_manager` 会把它链接进 profile，因此移动或删除它会破坏该 bundle。
 
-If the profile was already running, the bundle selection lands in
-`package.json` but its fiber may stay inactive. Toggle the bundle off and on
-(`plugin_manager set_bundle`) to apply it live, or restart `dsh web`.
+如果 profile 已经在运行，bundle 的选择项会写入 `package.json`，但其 fiber 可能仍处于非活动状态。将该 bundle 关闭再打开（`plugin_manager set_bundle`）即可实时应用，或者重启 `dsh web`。
 
-Verify it is live rather than merely saved:
+验证它确实已生效，而不仅仅是已保存：
 
-- `cordis_inspect_query` → host `Config.listConfigs` with `name:
-  "dsh-source-control"` should list the `include:source-control` entry;
-- `cordis_inspect_query` → client `Slots.listSubTree` should show an active
-  occupant keyed `dsh-source-control` in `sidebar.right.pane.tab`, an active
-  `source-control` key in `main`, and `source-control` in `sidebar.panellist`.
+- `cordis_inspect_query` → host `Config.listConfigs`，其 `name: "dsh-source-control"` 应列出 `include:source-control` 条目；
+- `cordis_inspect_query` → client `Slots.listSubTree` 应显示：在 `sidebar.right.pane.tab` 中有一个以 `dsh-source-control` 为键的活动占用者，在 `main` 中有一个活动的 `source-control` 键，以及在 `sidebar.panellist` 中的 `source-control`。
 
-### Making a change live
+### 让更改生效
 
-Host-side and client-side code have different rules, and the difference is easy
-to get wrong:
+宿主侧和客户端代码有不同的规则，而这一差异很容易搞错：
 
-- **Client (`lib/client.js`)** — the bundle is served under a content-addressed
-  revision, so a page refresh picks up a change.
-- **Host (`lib/index.js` and everything it imports)** — only loaded at process
-  start. The loader's `import()` is not cache-busted and Node's ESM cache is keyed
-  by URL, so re-importing returns the module already evaluated. **A change here
-  needs a `dsh web` restart.**
+- **客户端（`lib/client.js`）**——bundle 以内容寻址的修订版本提供服务，因此刷新页面即可获取更改。
+- **宿主（`lib/index.js` 及其导入的一切）**——普通的 `import()` 按 URL 缓存。如果没有限定范围的 Host HMR 监视器，更改需要重启 `dsh web`。启用下面的监视器后，HMR 会使入口及其导入的模块失效并重新加载它们；请验证该监视器和成功重新加载，而不要假定浏览器刷新也会替换宿主代码。
 
-The profile ships `hmr.config.root: []`, which disables module watching
-altogether. This package's `cordis.patch.yml` note in the profile patch sets a
-scoped root so watching is on:
+profile 自带 `hmr.config.root: []`，这会完全禁用模块监视。本包在 profile patch 中的 `cordis.patch.yml` 说明设置了一个限定范围的 root，从而开启监视：
 
 ```yaml
 - id: hmr
@@ -96,26 +82,20 @@ scoped root so watching is on:
       - /workspace/dsh-source-control
 ```
 
-With that in place, touching `lib/index.js` reloads the entry, and HMR
-invalidates the file's **descendants** too — so editing `lib/tool.js` and then
-touching the entry is enough. Node's `node_modules` ignore rule is why the
-package's real path is named rather than the profile's symlink to it.
+有了它之后，触碰 `lib/index.js` 会重新加载入口，HMR 也会使该文件的**后代**失效——因此编辑 `lib/tool.js` 然后触碰入口就足够了。Node 的 `node_modules` 忽略规则，正是这里指名包的真实路径、而不是 profile 指向它的符号链接的原因。
 
-Verify a reload rather than assuming it: change a model-visible string, touch the
-entry, and read the tool list back.
+要验证重新加载，而不是假定它发生：修改一个模型可见的字符串，触碰入口，然后读回工具列表。
 
-## Configuration
+## 配置
 
-All values live in the `source-control` row of `cordis.patch.yml` and are
-validated at activation; an unknown field or a non-positive value fails the row
-rather than being ignored.
+所有值都位于 `cordis.patch.yml` 的 `source-control` 行中，并在激活时校验；未知字段或非正值会使该行失败，而不是被忽略。
 
-| Field | Default | Meaning |
+| 字段 | 默认值 | 含义 |
 |---|---|---|
-| `timeoutMs` | `30000` | Milliseconds one git command may run before it is abandoned. |
-| `maxOutputBytes` | `8388608` | Bytes of stdout retained per command. A larger diff is **refused, never truncated**, because a silently cut diff reads as the whole change. |
-| `maxDiffLines` | `20000` | Lines one file's diff may carry before the viewer is told it is too large. |
-| `maxLogEntries` | `50` | Commits returned per history page. |
+| `timeoutMs` | `30000` | 单条 git 命令在被放弃前可运行的毫秒数。 |
+| `maxOutputBytes` | `8388608` | 每条命令保留的 stdout 字节数。更大的差异会被**拒绝，绝不截断**，因为被静默切掉的差异读起来会像是完整的更改。 |
+| `maxDiffLines` | `20000` | 在告知查看器差异过大之前，单个文件的差异可携带的行数。 |
+| `maxLogEntries` | `50` | 每个历史页返回的提交数。 |
 
 ```yaml
 - id: source-control
@@ -124,7 +104,7 @@ rather than being ignored.
     maxLogEntries: 100
 ```
 
-## Architecture
+## 架构
 
 ```
 React panel ──fetch('/api/source-control/<op>?sessionId=…|repo=…')
@@ -137,140 +117,87 @@ React panel ──fetch('/api/source-control/<op>?sessionId=…|repo=…')
               JSON envelope            git.js ── ctx.subprocess (argv only)
 ```
 
-| File | Owns |
+| 文件 | 负责 |
 |---|---|
-| `lib/git.js` | argv-only git invocation and the status/diff/log parsers. No Cordis, no HTTP — testable against a scratch repo. |
-| `lib/repo.js` | `assertInside`, the **single** path-authority guard, and repository location. |
-| `lib/service.js` | Session→repository resolution, the containment choke point, the operation table. |
-| `lib/routes.js` | The eight `/api/source-control/*` routes and the JSON envelope. |
-| `lib/index.js` | Cordis entry: config validation, wiring, teardown. |
-| `lib/tool.js` | The agent tool: action set, argument validation, diff rendering. |
-| `lib/client.js` | Browser half: tab type, page, shared panel, hunk controls, styles. |
+| `lib/git.js` | 仅使用 argv 的 GitRunner、状态/差异/日志解析器以及规范化操作工厂。不涉及 Cordis 或 HTTP。 |
+| `lib/git-repository.js` | 内部的分支/同步操作与不可变的提交/图操作，使用同一个 runner。 |
+| `lib/repo.js` | `assertInside`，**唯一**的文件系统路径权限防护，以及仓库定位。 |
+| `lib/service.js` | Session→仓库解析、路径权限、操作表和按根的写入串行化。 |
+| `lib/routes.js` | 二十条已认证的 `/api/source-control/*` 路由以及不变的 JSON 信封。 |
+| `lib/index.js` | Cordis 入口：配置校验、装配、拆卸。 |
+| `lib/tool.js` | agent 工具：操作集、参数校验、差异渲染。 |
+| `lib/client.js` | 浏览器侧：标签页类型、页面、共享面板、块控件、样式。 |
 
-### Contracts worth knowing before editing
+### 编辑前值得了解的约定
 
-- **Envelope.** Every route answers HTTP 200 with `{ok: true, value}` or
-  `{ok: false, error: {code, message, details}}`. A business refusal ("nothing is
-  staged") is a *result*, not a transport failure. A non-200 means the request
-  never reached a handler.
-- **Read vs write.** Each route declares `read: true|false`. That flag is the
-  whole authority boundary: `grep -n "read: false" lib/routes.js` enumerates
-  every operation that can change a repository.
-- **Path authority.** No caller path reaches git except through
-  `service.withPaths()`. The guard resolves the path's nearest existing ancestor
-  through the real filesystem, so a directory symlink escaping the repository is
-  rejected. A leaf symlink is allowed on purpose: git stores a link as its own
-  blob.
-- **A hunk operation is addressed by NUMBER, never by patch text.** The client
-  sends `{path, hunkIndex}`; the Host regenerates the patch from live `git diff`
-  output, slices the hunk out of it, and feeds it to `git apply` on **stdin**. No
-  caller can supply a patch, name a second path, or reach a file the guard did
-  not already clear — which is the whole attack class that hunk staging normally
-  opens. `slicePatch` takes a hunk whole (from its `@@` to the next), because
-  `git apply` rejects a patch whose header disagrees with the lines beneath it.
-- **Hunk discard is human-only.** `discard-hunk` exists as a route and has no
-  agent action, for the same reason whole-file discard does not: it is
-  irreversible. Both agent-visible action lists are asserted in
-  `verify/tools.mjs`.
-- **`U3` context keeps hunks separable.** Hunks closer together than the context
-  git merges them, so `hunkIndex` addresses whatever git actually reported; the
-  Host refuses an index it does not have rather than guessing.
-- **Pathspecs are literal.** The runner sets `GIT_LITERAL_PATHSPECS=1`. Without
-  it git reads a path argument as a glob: staging a file literally named
-  `report[1].txt` would also stage `report1.txt`, and the `git clean -f` behind
-  discard would **delete** a sibling that merely matched (`star*.txt` also
-  removes `starZZZ.txt`). Do not remove that variable.
-- **A loader value is not data until it is shaped.** `useLoad` stores whatever
-  the route resolved, including the `null` the diff loader returns while nothing
-  is selected. That `null` is still in state for the render that follows a click,
-  before the effect re-runs, so anything reading the loaded value must test for
-  the shape it needs (`Array.isArray(value.hunks)`), not merely `!== undefined`.
-  Getting this wrong blanks the panel on the user's first click.
-- **Write your own DOM ids per surface.** The sidebar tab and the main page can be
-  mounted at the same time, so an id baked from the panel constant would appear
-  twice and bind a `<label>` to whichever the browser found first.
-- **A commit's `date` is not guaranteed.** Read it through `String(commit.date ??
-  '').slice(0, 10)`; a direct `.slice` throws and the error boundary then replaces
-  the whole page.
-- **Idempotent writes.** `stage`/`unstage`/`discard` compute their effective set
-  from the live working tree, so a stale UI row is a reported no-op
-  (`alreadyStaged`, `alreadyUnstaged`) instead of a pathspec error.
-- **Two discard granularities.** Whole-file discard restores tracked paths from
-  HEAD or deletes untracked ones; hunk discard reverse-applies one hunk. Both ask
-  for confirmation and neither is agent-reachable.
-- **Discard classification.** Tracked paths are restored from HEAD; untracked
-  paths are deleted with `git clean -f` scoped to exactly those paths (`-x` is
-  deliberately absent, so ignored files survive). Like `stage` and `unstage`,
-  discard filters **positively** against the changes git reports, so a path that
-  is not a current change comes back as `unchanged` instead of reaching git.
-- **A capped response is refused, not parsed.** The collect mode stops stdout at
-  `maxOutputBytes`; parsing that prefix would turn a 3000-line change into "0
-  added, 410 removed" and a truncated date into a corrupted one. `GitRunner.run`
-  raises `git/output-too-large` instead, which is what "refuses instead of
-  truncating" in `cordis.patch.yml` has always claimed.
-- **The repository keeps its guardrails.** Commit does **not** pass `--no-verify`,
-  so the repository's own pre-commit and commit-msg hooks run; a hook failure
-  surfaces as an ordinary commit failure.
-- **Reading a diff runs nothing the repository defines.** Every diff argv carries
-  `--no-ext-diff` *and* `--no-textconv`, so a diff driver or textconv command
-  declared in a cloned `.gitattributes`/config cannot execute merely because a
-  file was clicked. (`git add` still honours `filter.<x>.clean`, for which git
-  offers no opt-out flag — a documented residual, not an oversight.)
-- **Nothing touches git's own metadata.** `assertInside` rejects any path whose
-  first segment is `.git`, so no route can name a hook, a config file, or an
-  object.
-- **Client imports.** `lib/client.js` requires **only** `react` from the shell's
-  module table and imports no Harness Client package (a plain-JS plugin has no
-  type check, and a throwing component blanks the whole seat). Styles are its
-  own, injected once under a `data-plugin-css` tag, using only `--dsw-*` tokens.
-  Each surface renders inside an error boundary so a defect shows a message
-  instead of blanking the panel.
+- **信封。** 每条路由都以 HTTP 200 作答并返回 `{ok: true, value}` 或 `{ok: false, error: {code, message, details}}`。业务性拒绝（“没有任何已暂存的内容”）是一个*结果*，而不是传输失败。非 200 意味着请求从未到达处理程序。
+- **读与写。** 每条路由声明 `read: true|false`。该标志就是全部权限边界：`grep -n "read: false" lib/routes.js` 会枚举所有可能更改仓库的操作。
+- **路径权限。** 工作区变更/差异路径会经过 `service.withPaths()`。防护会通过真实文件系统解析最近一层已存在的祖先，因此逃逸的目录符号链接会被拒绝；叶子符号链接是允许的，因为 Git 存储的是链接本身。历史差异则校验完整的提交 ID 以及是否属于该提交的已更改路径集合；它们只读取 Git 对象，因此一个被正常删除的路径不需要存在的文件系统祖先。
+- **远程权限。** 分支/引用名会被校验，而不是作为任意的 revision/refspec 接受。远程操作只选择已配置的名称，保持为已认证的 POST 写入，且绝不扩展 agent 工具的操作。
+- **写入串行化。** 所有由 service 负责的写入在解析出的规范化根上共享同一个队列，跨各 UI 界面和 agent 调用。失败或被取消的请求不会污染后续工作。读取和外部 Git 进程不会被事务性锁定。
+- **块操作通过编号寻址，绝不通过补丁文本。** 客户端发送 `{path, hunkIndex}`；宿主从实时的 `git diff` 输出重新生成补丁，从中切出该块，并通过 **stdin** 喂给 `git apply`。任何调用方都无法提供补丁、指定第二个路径，或触达防护尚未放行的文件——而这正是块暂存通常会打开的那一整类攻击面。`slicePatch` 会整块取出（从其 `@@` 到下一个），因为 `git apply` 会拒绝头部与其下方各行不一致的补丁。
+- **放弃块仅限人工。** `discard-hunk` 作为路由存在，但没有 agent 操作，原因与整文件放弃相同：它不可逆。两份面向 agent 的操作列表都在 `verify/tools.mjs` 中断言。
+- **`U3` 上下文使各块保持可分离。** 间距小于该上下文的块会被 git 合并，因此 `hunkIndex` 寻址的是 git 实际报告的内容；宿主会拒绝它没有的索引，而不是猜测。
+- **Pathspec 是字面量。** runner 设置 `GIT_LITERAL_PATHSPECS=1`。没有它，git 会把路径参数当作 glob 读取：暂存一个名字字面为 `report[1].txt` 的文件也会暂存 `report1.txt`，而放弃更改背后的 `git clean -f` 会**删除**仅仅是匹配到的同级文件（`star*.txt` 也会移除 `starZZZ.txt`）。不要移除该变量。
+- **loader 的值在被塑形之前不是数据。** `useLoad` 存储路由解析出的任何内容，包括在未选中任何内容时差异 loader 返回的 `null`。在一次点击之后、effect 重新运行之前的那次渲染中，该 `null` 仍在 state 中，因此任何读取已加载值的代码都必须针对它需要的形状做检测（`Array.isArray(value.hunks)`），而不仅仅是 `!== undefined`。搞错这一点会让面板在用户第一次点击时变空白。
+- **每个界面自行编写 DOM id。** 侧边栏标签页和主页面可以同时挂载，因此用一个面板常量硬编码出来的 id 会出现两次，并把 `<label>` 绑定到浏览器最先找到的那个。
+- **提交的 `date` 并不保证存在。** 请通过 `String(commit.date ?? '').slice(0, 10)` 读取它；直接 `.slice` 会抛错，随后错误边界会替换整个页面。
+- **幂等写入。** `stage`/`unstage`/`discard` 从实时工作区计算其生效集合，因此过期的 UI 行会作为被报告的 no-op（`alreadyStaged`、`alreadyUnstaged`）出现，而不是 pathspec 错误。
+- **两种放弃粒度。** 整文件放弃从 HEAD 恢复已跟踪路径或删除未跟踪路径；块放弃反向应用单个块。两者都会请求确认，且两者都不允许 agent 触达。
+- **放弃的分类。** 已跟踪路径从 HEAD 恢复；未跟踪路径用 `git clean -f` 删除，且范围精确限定为这些路径（有意不加 `-x`，因此被忽略的文件得以保留）。与 `stage` 和 `unstage` 一样，放弃会针对 git 报告的更改做**正向**过滤，因此不是当前更改的路径会以 `unchanged` 返回，而不是到达 git。
+- **达到上限的响应会被拒绝，而不是被解析。** collect 模式在 `maxOutputBytes` 处停止 stdout；解析该前缀会把一个 3000 行的更改变成“新增 0 行，删除 410 行”，并把被截断的日期变成损坏的日期。`GitRunner.run` 反而会抛出 `git/output-too-large`，这正是 `cordis.patch.yml` 中“拒绝而不是截断”一直所声称的。
+- **仓库保留其护栏。** Commit **不**传递 `--no-verify`，因此仓库自身的 pre-commit 和 commit-msg 钩子会运行；钩子失败会表现为普通的提交失败。
+- **读取差异不会运行仓库定义的任何东西。** 产生可审阅输出的差异参数——`/diff`、块应用和历史提交差异——都带有 `--no-ext-diff` *和* `--no-textconv`，因此被克隆的 `.gitattributes`/config 中声明的 diff driver 或 textconv 命令不会仅仅因为点击了某个文件就执行。提交按钮背后的已暂存索引探测同样带有这两个标志，因此一次提交尝试也无法触发其中之一。（`git add` 仍然遵循 `filter.<x>.clean`，对此外 git 没有提供退出标志——这是一处有记录的残留，而非疏忽。）
+- **不触碰 git 自身的元数据。** `assertInside` 会拒绝任何第一段为 `.git` 的路径，因此没有路由能指定钩子、配置文件或对象。
+- **客户端导入。** `lib/client.js` **只**从 shell 的模块表中 require `react`，不导入任何 Harness Client 包（纯 JS 插件没有类型检查，而一个抛错的组件会让整个席位变空白）。样式是它自己的，在 `data-plugin-css` 标签下注入一次，只使用 `--dsw-*` token。每个界面都在错误边界内渲染，因此缺陷会显示一条消息，而不是让面板变空白。
 
-## Verification, CI, and releases
+## 验证、CI 与发布
 
-### Running the suites
+### 运行测试套件
 
-`npm test` runs every suite and prints one combined result. The suites drive the
-real code against real scratch repositories — no mocks of the behaviour under
-test — and need **no dependencies**, so a fresh checkout runs them immediately.
+`npm test` 会运行所有套件并打印一份合并结果。这些套件让真实代码针对真实的临时（scratch）仓库运行——不 mock 被测行为——并且**不需要任何依赖**，因此一次全新的检出即可立即运行它们。
 
 ```bash
-node verify/git-layer.mjs      # git operations, path guard, unborn branch, pathspec literals
-node verify/routes.mjs         # every route through real Request objects
-node verify/apply.mjs          # Host wiring: routes registered, disposed, config
-node verify/client-bundle.mjs  # the browser bundle actually executes and registers
-node verify/client-render.mjs  # the panel renders real payloads; diff line numbering
-node verify/hardening.mjs      # regressions for the defects an adversarial review found
-node verify/tools.mjs          # the agent tool, diff rendering, and both callers agreeing
-node verify/hunks.mjs          # hunk stage/unstage/discard, and that no patch text is accepted
+node verify/git-layer.mjs              # git operations, path guard, unborn branch, pathspec literals
+node verify/repository-operations.mjs  # branches, graph, historical diffs, local-only reads, remote safety
+node verify/routes.mjs                 # every route through real Request objects
+node verify/repository-routes.mjs      # service authority, canonical-root queue, real scratch remotes
+node verify/apply.mjs                  # Host wiring: routes registered, disposed, config
+node verify/client-bundle.mjs          # the browser bundle actually executes and registers
+node verify/client-render.mjs          # the panel renders real payloads; diff line numbering; dialogs
+node verify/hardening.mjs              # regressions for the defects an adversarial review found
+node verify/tools.mjs                  # the agent tool, diff rendering, and both callers agreeing
+node verify/hunks.mjs                  # hunk stage/unstage/discard, and that no patch text is accepted
+node verify/release.mjs                # packaging and the static capability boundary
 ```
 
-371 assertions in total.
+`npm test` 打印合并结果；计数位于每个套件自己的输出中，而不是本文件里，因此它们不会漂移。
 
-They are ordinary scripts: each prints `ok`/`FAIL` per assertion and exits
-non-zero on failure. `verify/routes.mjs` and `verify/client-bundle.mjs` carry
-their own `node:child_process`/fake-context adapters precisely so they need no
-running Host.
+仅限本地的读取是一个内部标志，而不是类型层面的保证：传输豁免是 `lib/git-repository.js` 中唯一一处 `transportBatchMode` 调用点，而 `verify/repository-operations.mjs` 设置同一个标志，以准备它自己那些需要传输的 fixture。
 
-Not covered by them: the browser-session fence (assert with an unauthenticated
-request — expect `401`, and with a foreign `Host` header — expect `403`) and
-visual rendering, which needs a connected page.
+`verify/repository-operations.mjs` 和 `verify/browser-workbench.mjs` 是两个超出普通单元检查范围的套件。前者让真实 Git 针对一次性仓库运行，其中包括一个**部分克隆**，其 promisor 远程指向一个会记录任何执行的辅助程序——从而证明一次读取既不获取它也不运行它。后者是可选的，需要浏览器、运行在 `http://127.0.0.1:3080` 上的 GUI（它提供该套件所断言的产物）以及安装在 `/usr/local/lib/node_modules/playwright` 的 Playwright。它会获取所提供的客户端产物，与磁盘上的源做逐字节比较，并针对隔离的 fixture 渲染它，以检查真实的指针/键盘调整尺寸、桌面和移动端几何布局、只读历史审阅，以及捕获源的远程对话框。它从不写入活动仓库，也从不绕过认证：
 
-### There is no build step
+```bash
+npm install --prefix node_modules/.scm-browser --no-audit --no-fund --package-lock=false react@19.2.0 react-dom@19.2.0 esbuild@0.25.10
+CHROME_BIN=/usr/local/bin/chromium node verify/browser-workbench.mjs
+```
 
-This package ships the JavaScript it runs. There is no compilation, no
-bundler, and no `devDependencies`, so "building" it means nothing — a `build`
-script here would only be theatre. The workflows therefore do not build:
+它们是普通脚本：每条断言打印 `ok`/`FAIL`，并在失败时以非零状态退出。`verify/routes.mjs` 和 `verify/client-bundle.mjs` 自带 `node:child_process`/假上下文适配器，正是为了让它们不需要运行中的宿主。
 
-| Workflow | Trigger | What it does |
+它们未覆盖的内容包括：浏览器会话栅栏（用未认证的请求断言——预期 `401`，用外来的 `Host` 头断言——预期 `403`）、针对实时服务器的真实宿主 SSH/HTTP 认证，以及运行中的已认证 GUI。`verify/browser-workbench.mjs` 把真实的客户端针对隔离的 fixture 渲染，这是布局和交互方面的证据，而不是关于实时部署的证明：本宿主上的 GUI 对未认证请求返回 `401`，而未认证的 `401` 无法区分“路由已注册”与“什么都没注册”。请把这一边界视为未验证，而不是通过。
+
+### 没有构建步骤
+
+本包直接发布它运行的 JavaScript。没有编译、没有打包器，也没有 `devDependencies`，因此“构建”它没有任何意义——这里的 `build` 脚本只会是做戏。因此这些工作流不进行构建：
+
+| 工作流 | 触发条件 | 作用 |
 |---|---|---|
-| `ci.yml` | every push and PR | `npm test` on Node 20.3, 22, and 24; asserts the runtime floor; checks `npm install` succeeds |
-| `release.yml` | a `v*` tag | `npm test`, checks the tag matches `package.json`, runs `npm pack`, and attaches the tarball to a GitHub Release with its checksums |
+| `ci.yml` | 每次 push 和 PR | 在 Node 20.3、22 和 24 上运行 `npm test`；断言运行时下限；检查 `npm install` 成功 |
+| `release.yml` | 一个 `v*` 标签 | 运行 `npm test`，检查标签与 `package.json` 匹配，运行 `npm pack`，并把 tarball 及其校验和附加到 GitHub Release |
 
-The floor is **Node 20.3**: the git runner uses `AbortSignal.any`, the newest API
-anywhere in the package (`engines.node` states the same bound).
+下限是 **Node 20.3**：git runner 使用 `AbortSignal.any`，这是本包中任何地方所用的最新 API（`engines.node` 声明了同样的界限）。
 
-### Cutting a release
+### 发布一个版本
 
 ```bash
 # 1. bump the version
@@ -279,11 +206,9 @@ npm version patch          # or minor / major; this commits and tags
 git push --follow-tags
 ```
 
-`release.yml` refuses to publish when the tag disagrees with `package.json`, so a
-release can never name a version the code does not carry. The attached tarball is
-the installable bundle; its `sha1` and `sha512` are printed in the release notes.
+当标签与 `package.json` 不一致时，`release.yml` 拒绝发布，因此一个 release 绝不会标称代码并未携带的版本。所附的 tarball 就是可安装的 bundle；它的 `sha1` 和 `sha512` 会打印在 release notes 中。
 
-Verify locally before tagging:
+打标签前在本地验证：
 
 ```bash
 npm test

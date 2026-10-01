@@ -162,7 +162,7 @@ console.log(`# scratch repository: ${repo}\n`);
 
 // ---------------------------------------------------------------------------
 console.log('## route table shape');
-check(routes.size === 11, 'eleven routes are registered', routes.size);
+check(routes.size === 20, 'twenty routes are registered', routes.size);
 check([...routes.keys()].every((path) => path.startsWith('/api/')), 'every route lives below /api');
 check(
   [...routes.keys()].every((path) => path.split('/').every((segment) => segment === '' || /^[A-Za-z0-9_$.-]+$/.test(segment))),
@@ -170,16 +170,17 @@ check(
 );
 const reads = routeTable(service).filter((route) => route.read);
 const writes = routeTable(service).filter((route) => !route.read);
-check(reads.length === 4, 'four routes are read-only', reads.map((route) => route.path));
-check(writes.length === 7, 'seven routes mutate the repository', writes.map((route) => route.path));
+check(reads.length === 8, 'eight routes are read-only', reads.map((route) => route.path));
+check(writes.length === 12, 'twelve routes mutate the repository', writes.map((route) => route.path));
 check(
   writes.every((route) => route.methods[0] === 'POST'),
   'every mutating route requires POST',
 );
 check(
-  routeTable(service).every((route) => !/fetch|pull|push|remote|clone/.test(route.path)),
-  'no route offers a network git operation',
+  ['fetch', 'pull', 'push'].every((operation) => writes.some((route) => route.path === `${ROUTE_PREFIX}/${operation}`)),
+  'remote operations are explicit POST mutations, never read-side effects',
 );
+check(![...routes.keys()].some((path) => /clone|reset|force/.test(path)), 'clone, reset and force operations remain unavailable');
 
 // ---------------------------------------------------------------------------
 console.log('\n## discovery');

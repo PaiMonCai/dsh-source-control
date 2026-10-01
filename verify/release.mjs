@@ -11,7 +11,7 @@
  *
  *     node verify/release.mjs
  */
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -168,13 +168,24 @@ const ci = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8');
 check(/npm test/.test(ci), 'CI runs the same npm test a human runs');
 check(/engines\.node|AbortSignal\.any/.test(ci), 'CI states or asserts the runtime floor');
 
-console.log('\n## the network-git boundary holds');
-for (const file of ['lib/git.js', 'lib/routes.js', 'lib/tool.js']) {
-  const source = await readFile(join(root, file), 'utf8');
-  for (const verb of ['fetch', 'pull', 'push', 'remote', 'clone']) {
-    const pattern = new RegExp(`['"\`]${verb}['"\`]`);
-    check(!pattern.test(source), `${file} runs no \`git ${verb}\``);
+console.log('\n## remote operations stay explicit and human-only');
+const { routeTable, ROUTE_PREFIX } = await import('../lib/routes.js');
+const routes = routeTable({});
+for (const action of ['switch-branch', 'create-branch', 'fetch', 'pull', 'push']) {
+  const route = routes.find((entry) => entry.path === `${ROUTE_PREFIX}/${action}`);
+  check(route?.read === false && route.methods.length === 1 && route.methods[0] === 'POST', `${action} is an explicit authenticated write route`);
+}
+for (const file of (await readdir(join(root, 'lib'))).filter((name) => name.startsWith('git') && name.endsWith('.js'))) {
+  const source = await readFile(join(root, 'lib', file), 'utf8');
+  for (const forbidden of ['clone', 'reset', '--force', '--force-with-lease', '--mirror', '--delete']) {
+    const quoted = new RegExp(`['"\`]${forbidden}['"\`]`);
+    check(!quoted.test(source), `${file} has no ${forbidden} command or option`);
   }
+}
+const agentSource = await readFile(join(root, 'lib/tool.js'), 'utf8');
+for (const action of ['fetch', 'pull', 'push', 'switch-branch', 'create-branch']) {
+  const quoted = new RegExp(`['"\`]${action}['"\`]`);
+  check(!quoted.test(agentSource), `agent tool cannot initiate ${action}`);
 }
 
 console.log('\n## discard stays human-only');

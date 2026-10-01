@@ -354,11 +354,11 @@ const outsideRepoLink = await assertInside(repo, 'escape-link');
 check(outsideRepoLink === 'escape-link', 'a leaf symlink inside the repository is allowed (git stores it as a blob)');
 
 // ---------------------------------------------------------------------------
-console.log('\n## no network git');
-const source = await readFile(new URL('../lib/git.js', import.meta.url), 'utf8');
+console.log('\n## agent operations remain local');
+const source = await readFile(new URL('../lib/tool.js', import.meta.url), 'utf8');
 for (const verb of ['fetch', 'pull', 'push', 'remote', 'clone', 'ls-remote']) {
   const pattern = new RegExp(`['"\`]${verb}['"\`]`);
-  check(!pattern.test(source), `lib/git.js runs no \`git ${verb}\``);
+  check(!pattern.test(source), `agent tool exposes no \`git ${verb}\``);
 }
 
 await rm(scratch, { recursive: true, force: true });

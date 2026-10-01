@@ -21,7 +21,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Every suite, in the order a reader should see them: behaviour first, packaging last. */
 const SUITES = [
   'git-layer',
+  'repository-operations',
   'routes',
+  'repository-routes',
   'apply',
   'client-bundle',
   'client-render',
@@ -49,12 +51,12 @@ function run(name) {
     child.on('close', (code) => {
       const lines = out.trimEnd().split('\n');
       const failures = lines.filter((line) => line.startsWith('FAIL'));
-      resolve({
-        name,
-        code: code ?? 1,
-        // Keep the failing lines: the summary is useless without them.
-        tail: failures.length > 0 ? failures.join('\n') : lines[lines.length - 1] ?? '(no output)',
-      });
+      // A pass reports its own count line. A failure keeps its FAIL lines, and a
+      // suite that died without printing one (an assertion helper throwing, a
+      // timeout) shows its tail instead of a bare count with no reason.
+      const last = lines.filter((line) => line.trim() !== '').at(-1) ?? '(no output)';
+      const tail = (code ?? 1) === 0 ? last : (failures.length > 0 ? failures.join('\n') : lines.slice(-6).join('\n'));
+      resolve({ name, code: code ?? 1, tail });
     });
   });
 }
