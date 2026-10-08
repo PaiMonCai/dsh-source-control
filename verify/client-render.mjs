@@ -897,6 +897,46 @@ check(requests.some((entry) => entry.method === 'GET' && entry.target.includes('
 check(textOf(ghView).includes('Review this change') && textOf(ghView).includes('file.ts'), 'PR detail and changed-file selector render');
 check(networkWrites().length === 0, 'GitHub read-only review never invokes Git transport');
 
+console.log('\n## explicitly authorized GitHub PR creation');
+reset();
+scripted = {
+  git: catalogFixture,
+  status: { ok: true, value: cleanPayload },
+  branches: { ok: true, value: {
+    current: 'feature', head: 'abc',
+    local: [{ name: 'feature', current: true, hash: 'abc', upstreamTarget: { remote: 'origin', branch: 'feature' } }],
+    remote: [{ name: 'origin/feature', remote: 'origin', branch: 'feature', hash: 'abc' },
+      { name: 'origin/main', remote: 'origin', branch: 'main', hash: 'def' }],
+    remotes: [{ name: 'origin', github: {
+      url: 'https://github.com/PaiMonCai/dsh-source-control',
+      pullsUrl: 'https://github.com/PaiMonCai/dsh-source-control/pulls',
+      issuesUrl: 'https://github.com/PaiMonCai/dsh-source-control/issues',
+    } }],
+  } },
+  'github-pulls': { ok: true, value: { items: [], capabilities: { authenticated: true, canCreate: true } } },
+  'github-create-pull': { ok: true, value: { pull: { number: 77, title: 'Ready to review' } } },
+};
+let creationTree = await render(pageComponent, pageProps);
+walk(creationTree).find((node) => node.type === 'button' && node.props.title === t('github.review')).props.onClick();
+creationTree = await render(pageComponent, pageProps);
+const createOpen = buttonText(creationTree, t('github.create'));
+check(createOpen !== undefined, 'host-approved GitHub repo shows create PR button');
+createOpen?.props.onClick();
+creationTree = await render(pageComponent, pageProps);
+const createDialog = walk(creationTree).find((node) => node.props?.role === 'dialog' && node.props?.['aria-label'] === t('github.create'));
+check(createDialog !== undefined, 'PR creation is in an explicit dialog');
+const titleBox = walk(createDialog).find((node) => node.type === 'input' && node.props.className === 'dsc-input');
+titleBox?.props.onChange({ target: { value: 'Ready to review' } });
+creationTree = await render(pageComponent, pageProps);
+buttonText(creationTree, t('github.createConfirm'))?.props.onClick();
+creationTree = await render(pageComponent, pageProps);
+check(!requests.some((req) => req.target.includes('/github-create-pull?')), 'first confirmation does not create a GitHub PR');
+await buttonText(creationTree, t('github.createSubmit'))?.props.onClick();
+check(requests.filter((req) => req.target.includes('/github-create-pull?') && req.method === 'POST').length === 1, 'second confirmation sends one GitHub PR creation POST');
+check(requests.find((req) => req.target.includes('/github-create-pull?'))?.body?.confirmed === true, 'PR write carries explicit confirmation flag');
+check(networkWrites().length === 0, 'GitHub PR creation never invokes git push or pull');
+
+
 let opTree = await operationTree(t('action.branches'));
 check(dialogOf(opTree)?.props['aria-label'] === t('action.branches'), 'the branch button opens an actual switch dialog');
 check(networkWrites().length === 0, 'opening branch controls never starts a network write');
