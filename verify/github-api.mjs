@@ -30,4 +30,40 @@ catch (error) { check(error instanceof GitHubReadError && error.code === 'github
 body = () => response({ message: 'not found' }, 404);
 try { await api.pulls(identity); throw new Error('accepted 404'); }
 catch (error) { check(error.code === 'github/not-found', 'private/nonpublic GitHub repo has actionable error'); }
+
+// Private reads and mutating endpoint are mock-only: no real account touched.
+const privateCalls = [];
+const auth = createGitHubReader({ authFor: (repo, method) =>
+  repo.owner === 'PaiMonCai' && repo.repo === 'dsh-source-control'
+    ? 'mock-host-token' : null,
+  fetchImpl: async (url, init) => {
+    privateCalls.push({ url, init });
+    return response(init.method === 'POST'
+      ? { number: 51, title: 'Proposed change', state: 'open' }
+      : [{ number: 50, title: 'Private PR', state: 'open' }], init.method === 'POST' ? 201 : 200);
+  },
+});
+check(auth.capabilities(identity).authenticated && auth.capabilities(identity).canCreate, 'approved private repository has capability flags');
+const privateList = await auth.pulls(identity);
+check(privateList.items[0].number === 50, 'token permits private read');
+check(privateCalls[0].init.headers.authorization === 'Bearer mock-host-token', 'host bearer credential included server-side');
+try {
+  await auth.createPull(identity, { head: 'feature', base: 'main', title: 'Proposed change', confirmed: false });
+  throw new Error('creation without confirmation was allowed');
+} catch (error) { check(error.code === 'github/confirmation-required', 'PR requires explicit confirmation'); }
+check(privateCalls.length === 1, 'unconfirmed PR never reaches network');
+const created = await auth.createPull(identity, { head: 'feature', base: 'main', title: 'Proposed change', body: 'test', draft: true, confirmed: true });
+check(created.pull.number === 51, 'confirmed PR has normalized result');
+check(privateCalls[1].init.method === 'POST' && privateCalls[1].init.redirect === 'error' &&
+  privateCalls[1].init.credentials === 'omit', 'GitHub POST is bounded to official API with redirects disabled');
+check(JSON.parse(privateCalls[1].init.body).draft === true && JSON.parse(privateCalls[1].init.body).head === 'feature', 'PR create sends approved fields');
+for (const head of ['-bad', 'main:evil', '../escape', 'feature..broken']) {
+  try { await auth.createPull(identity, { head, base: 'main', title: 'Proposed change', confirmed: true }); throw new Error('unsafe head was accepted'); }
+  catch (error) { check(error.code === 'github/invalid-branch', 'unsafe PR branch rejected'); }
+}
+const anonymous = createGitHubReader({ authFor: () => null, fetchImpl: async () => { throw new Error('not allowed'); } });
+check(!anonymous.capabilities(identity).canCreate, 'anonymous user has no PR creation capability');
+try { await anonymous.createPull(identity, { head: 'feature', base: 'main', title: 'Proposed change', confirmed: true }); throw new Error('write allowed'); }
+catch (error) { check(error.code === 'github/write-disabled', 'unapproved PR write refused before network'); }
+console.log('ok   GitHub host credential, explicit write gate, and private repo mocks');
 console.log('ok   GitHub public PR / issue / diff / checks reader');
