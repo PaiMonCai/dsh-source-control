@@ -2,7 +2,7 @@
  * Verification for the Host plugin wiring.
  *
  * Loads `lib/index.js` against a faithful fake Cordis context and asserts what
- * the plugin registers on the live seams: the twenty-four exact Fetch routes on
+ * the plugin registers on the live seams: the twenty-five exact Fetch routes on
  * `ctx.connection.fetch`, the `session/event` listener that invalidates the
  * repository cache, and full disposal of every registration.
  *
@@ -164,12 +164,12 @@ apply(ctx, {});
 // `registerRoutes` is async and its promise is held by the effect; give it a turn.
 await new Promise((resolve) => setTimeout(resolve, 50));
 
-check(state.fetchRoutes.length === 24, 'apply registers exactly twenty-four Fetch routes', state.fetchRoutes.length);
+check(state.fetchRoutes.length === 25, 'apply registers exactly twenty-five Fetch routes', state.fetchRoutes.length);
 const paths = state.fetchRoutes.map((route) => route.path);
 for (const operation of ['git', 'status', 'diff', 'log', 'stage', 'unstage', 'discard', 'commit', 'stage-hunk', 'unstage-hunk', 'discard-hunk',
   'branches', 'graph', 'commit-details', 'commit-diff',
   'switch-branch', 'create-branch', 'fetch', 'pull', 'push',
-  'github-pulls', 'github-issues', 'github-pull-detail', 'github-create-pull']) {
+  'github-pulls', 'github-issues', 'github-pull-detail', 'github-pull-discussion', 'github-create-pull']) {
   check(paths.includes(`${ROUTE_PREFIX}/${operation}`), `the ${operation} route is registered`);
 }
 check(
@@ -207,14 +207,14 @@ for (const effect of state.effects) {
   }
 }
 check(cleaned === state.effects.length, 'every effect exposes a cleanup', { cleaned, total: state.effects.length });
-check(state.disposed.length === 24, 'disposal withdraws every registered route', state.disposed.length);
+check(state.disposed.length === 25, 'disposal withdraws every registered route', state.disposed.length);
 
 console.log('\n## a composition without the tools registry still loads');
 const { ctx: ctx3, state: state3 } = createContext();
 state3.toolsAvailable = false;
 apply(ctx3, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
-check(state3.fetchRoutes.length === 24, 'the routes still register without a tools registry', state3.fetchRoutes.length);
+check(state3.fetchRoutes.length === 25, 'the routes still register without a tools registry', state3.fetchRoutes.length);
 check(state3.tools.length === 0, 'no tool is registered when tools is absent', state3.tools.length);
 
 console.log('\n## absent git is a reported state, not a load failure');
@@ -224,7 +224,7 @@ ctx2.subprocess.resolveExecutable = async () => {
 };
 apply(ctx2, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
-check(state2.fetchRoutes.length === 24, 'routes still register when git is missing', state2.fetchRoutes.length);
+check(state2.fetchRoutes.length === 25, 'routes still register when git is missing', state2.fetchRoutes.length);
 const gitBody = await (
   await state2.fetchRoutes.find((route) => route.path.endsWith('/git')).fetch(new Request(`http://localhost${ROUTE_PREFIX}/git`))
 ).json();

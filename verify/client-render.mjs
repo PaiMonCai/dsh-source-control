@@ -876,6 +876,14 @@ scripted = {
     items: [{ number: 9, title: 'Add review UI', state: 'open', author: 'tester', draft: false }],
     limit: 30,
   } },
+  'github-pull-discussion': { ok: true, value: {
+    number: 9,
+    entries: [
+      { id: 1, kind: 'comment', author: 'alice', body: 'Discussion item', createdAt: '2026-10-01T00:00:00Z' },
+      { id: 2, kind: 'review', author: 'bob', state: 'APPROVED', body: 'Review approved', createdAt: '2026-10-02T00:00:00Z' },
+    ],
+    limited: false,
+  } },
   'github-pull-detail': { ok: true, value: {
     pull: { number: 9, title: 'Add review UI', state: 'open', author: 'tester', head: 'feature', base: 'main', body: 'Review this change' },
     files: [{ filename: 'file.ts', additions: 1, deletions: 1, patch: '@@ -1 +1 @@\\n-old\\n+new' }],
@@ -895,6 +903,15 @@ selectedPr?.props.onClick();
 ghView = await render(pageComponent, pageProps);
 check(requests.some((entry) => entry.method === 'GET' && entry.target.includes('/github-pull-detail?') && entry.target.includes('number=9')), 'PR selection requests detail by number only');
 check(textOf(ghView).includes('Review this change') && textOf(ghView).includes('file.ts'), 'PR detail and changed-file selector render');
+check(!requests.some((entry) => entry.target.includes('/github-pull-discussion?')), 'PR detail does not prefetch discussion unnecessarily');
+const showDiscussion = buttonText(ghView, t('github.discussionShow'));
+check(showDiscussion !== undefined, 'discussion entry is available in PR details');
+showDiscussion?.props.onClick();
+ghView = await render(pageComponent, pageProps);
+check(requests.some((entry) => entry.method === 'GET' && entry.target.includes('/github-pull-discussion?') && entry.target.includes('number=9')), 'review discussions load only after explicit user open');
+check(textOf(ghView).includes('Discussion item') && textOf(ghView).includes('APPROVED'), 'PR discussion and review decision render in the workbench');
+check(!walk(ghView).some((node) => node.type === 'button' && /submit review|post comment/i.test(textOf(node))), 'discussion remains read-only without user-scoped OAuth');
+
 check(networkWrites().length === 0, 'GitHub read-only review never invokes Git transport');
 
 console.log('\n## explicitly authorized GitHub PR creation');
