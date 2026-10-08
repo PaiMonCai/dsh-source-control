@@ -67,6 +67,18 @@
 
 仍未支持：GitHub OAuth 账号登录、跨账号/不同权限的独立授权、私有 GitHub Enterprise、PR 评论与审核、自动合并。启用前需要在目标部署中手工验证访问隔离及权限设置。
 
+## PR 讨论与 Review 状态（第四阶段）
+
+GitHub 工作台中选择一个 PR，点击 **查看讨论 / Show discussion** 才会向 GitHub 请求讨论内容：
+
+- 常规 PR 评论（GitHub Issue Comments）；
+- Review 审核事件，例如 `APPROVED`、`CHANGES_REQUESTED`、`COMMENTED`；
+- 代码行内评论（含文件路径和有效行号）。
+
+三类内容分别最多展示 30 条，并在宿主侧截断长评论、限制响应体积。该界面只读，点击前**不会自动加载讨论**，打开页面也不会触发推送或提交。私有仓库可沿用明确批准的 Host 只读凭据；UI 会显示这是 **Host 共享身份，不是当前用户的 GitHub 身份**。
+
+**目前没有新增 PR 评论发布、Review Approve/Request Changes 按钮。** 在多用户场景上线这些写操作前，必须有 DSH 已认证用户主体、每人 GitHub OAuth 身份与隔离存储；仅靠当前的 Host Token 不安全。详见 [GitHub 身份与审核安全设计](docs/github-identity-review-security.md)。
+
 ## Agent 工具
 
 `source_control` 通过 UI 调用的同一批服务方法，把本地操作子集暴露给 agent——一份实现，两个调用方。分支变更和远程同步仍是仅限人工的 UI 操作：
