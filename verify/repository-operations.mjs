@@ -93,6 +93,15 @@ try {
   check(initial.current === 'main' && initial.local[0].upstream === 'origin/main', 'local branch/current/upstream metadata is real');
   check(initial.remote.some((row) => row.name === 'origin/main') && !initial.remote.some((row) => row.name === 'origin/HEAD'), 'remote symbolic HEAD is not a selectable branch');
   check(JSON.stringify(initial.remotes) === '[{"name":"origin"}]' && !JSON.stringify(initial).includes(origin), 'remote metadata exposes names, not endpoints');
+  // A GitHub fetch remote exposes canonical navigation only, never raw tokens
+  // or credentials; restore the bare local remote before transport tests.
+  await raw(repo, 'config', 'remote.origin.url', 'git@github.com:PaiMonCai/dsh-source-control.git');
+  const hosted = await ops.branches(io);
+  check(hosted.remotes[0].github?.pullsUrl === 'https://github.com/PaiMonCai/dsh-source-control/pulls', 'GitHub PR navigation derived from SSH remote');
+  await raw(repo, 'config', 'remote.origin.url', 'https://token@github.com/PaiMonCai/dsh-source-control.git');
+  const withSecret = await ops.branches(io);
+  check(withSecret.remotes[0].github === undefined && !JSON.stringify(withSecret).includes('token'), 'credential-bearing GitHub remote never reaches browser');
+  await raw(repo, 'config', 'remote.origin.url', origin);
   await ops.createBranch({ ...io, branch: 'topic/国际' });
   check((await ops.head(io)).branch === 'topic/国际', 'create switches to Unicode/slash branch');
   check((await ops.branches(io)).local.find((row) => row.name === 'topic/国际').upstream === null, 'local creation does not silently assign an upstream');
