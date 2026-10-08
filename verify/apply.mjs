@@ -154,6 +154,10 @@ check(typeof nonPositive === 'string' && nonPositive.includes('timeoutMs'), 'a n
 const unknown = await thrownMessage(() => resolveConfig({ unknownField: 1 }));
 check(typeof unknown === 'string' && unknown.includes('unknownField'), 'an unknown field is rejected', unknown);
 
+check(resolveConfig({}).githubAuth.repositories.length === 0, 'GitHub authorization is opt-in');
+check(resolveConfig({ githubAuth: { repositories: ['a/b'], allowWrites: true } }).githubAuth.allowWrites, 'GitHub write allowlist requires explicit enable');
+check((await thrownMessage(() => resolveConfig({ githubAuth: { repositories: ['a/b'], token: 'secret' } })))?.includes('githubAuth'), 'profile cannot store a GitHub token');
+
 console.log('\n## wiring');
 const { ctx, state } = createContext();
 apply(ctx, {});
