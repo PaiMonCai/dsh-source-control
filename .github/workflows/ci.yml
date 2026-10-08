@@ -59,3 +59,11 @@ jobs:
 
       - name: Check the package installs cleanly
         run: npm install --no-audit --no-fund
+
+      # Match the DSH Docker alpha channel: test against the exact upstream
+      # application version, not the moving npm latest dist-tag (currently rc).
+      # This is a CLI/install smoke, not an authenticated browser E2E test.
+      - name: Smoke DSH 0.2.1-alpha.1 launcher
+        if: matrix.node == '24'
+        run: |
+          npm exec --yes --package=@deepseek-ai/dsh@0.2.1-alpha.1 -- dsh --version
