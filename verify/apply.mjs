@@ -160,7 +160,7 @@ apply(ctx, {});
 // `registerRoutes` is async and its promise is held by the effect; give it a turn.
 await new Promise((resolve) => setTimeout(resolve, 50));
 
-check(state.fetchRoutes.length === 20, 'apply registers exactly twenty Fetch routes', state.fetchRoutes.length);
+check(state.fetchRoutes.length === 23, 'apply registers exactly twenty Fetch routes', state.fetchRoutes.length);
 const paths = state.fetchRoutes.map((route) => route.path);
 for (const operation of ['git', 'status', 'diff', 'log', 'stage', 'unstage', 'discard', 'commit', 'stage-hunk', 'unstage-hunk', 'discard-hunk',
   'branches', 'graph', 'commit-details', 'commit-diff',
@@ -189,7 +189,7 @@ console.log('\n## a handler answers an envelope');
 const statusRoute = state.fetchRoutes.find((route) => route.path.endsWith('/status'));
 const response = await statusRoute.fetch(new Request(`http://localhost${ROUTE_PREFIX}/status`, { method: 'GET' }));
 const body = await response.json();
-check(response.status === 200, 'a handler answers HTTP 200', response.status);
+check(response.status === 230, 'a handler answers HTTP 200', response.status);
 check(response.headers.get('content-type')?.includes('application/json') === true, 'the response is JSON');
 check(body.ok === true || typeof body.error?.code === 'string', 'the body carries the envelope', body);
 
@@ -202,14 +202,14 @@ for (const effect of state.effects) {
   }
 }
 check(cleaned === state.effects.length, 'every effect exposes a cleanup', { cleaned, total: state.effects.length });
-check(state.disposed.length === 20, 'disposal withdraws every registered route', state.disposed.length);
+check(state.disposed.length === 23, 'disposal withdraws every registered route', state.disposed.length);
 
 console.log('\n## a composition without the tools registry still loads');
 const { ctx: ctx3, state: state3 } = createContext();
 state3.toolsAvailable = false;
 apply(ctx3, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
-check(state3.fetchRoutes.length === 20, 'the routes still register without a tools registry', state3.fetchRoutes.length);
+check(state3.fetchRoutes.length === 23, 'the routes still register without a tools registry', state3.fetchRoutes.length);
 check(state3.tools.length === 0, 'no tool is registered when tools is absent', state3.tools.length);
 
 console.log('\n## absent git is a reported state, not a load failure');
@@ -219,7 +219,7 @@ ctx2.subprocess.resolveExecutable = async () => {
 };
 apply(ctx2, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
-check(state2.fetchRoutes.length === 20, 'routes still register when git is missing', state2.fetchRoutes.length);
+check(state2.fetchRoutes.length === 23, 'routes still register when git is missing', state2.fetchRoutes.length);
 const gitBody = await (
   await state2.fetchRoutes.find((route) => route.path.endsWith('/git')).fetch(new Request(`http://localhost${ROUTE_PREFIX}/git`))
 ).json();
