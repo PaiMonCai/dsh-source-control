@@ -1,5 +1,8 @@
 # dsh-source-control
 
+> **兼容基线（2026-10-08）**：面向 `@deepseek-ai/dsh@0.2.1-alpha.1`（DSH Docker 使用的 alpha 通道），而非 npm 默认 `latest` 对应的 `0.2.0-rc.2`。CI 在 Node 24 下固定检查此版本的 DSH 启动命令；原有本地 Git/Host/Client 模拟验证继续运行。CLI smoke **不等同**于真实浏览器内完成插件安装和端到端验证。升级 DSH 时先运行 `npm test` 并检查 DSH Web 的右侧栏、主页面和 Agent 工具。
+
+
 为 DeepSeek Harness Web UI 提供 VS Code 风格的**源代码管理（Source Control）**：无需离开应用即可管理某个 Session 工作目录的 Git 仓库。
 
 同一个面板之上有两个界面：
