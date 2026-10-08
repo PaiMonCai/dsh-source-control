@@ -4,7 +4,7 @@ const identity = githubRemote('git@github.com:PaiMonCai/dsh-source-control.git')
 const seen = [];
 let body = null;
 function response(value, status = 200) {
-  return { ok: status === 200, status, headers: { get: () => null }, text: async () => JSON.stringify(value) };
+  return { ok: status >= 200 && status < 300, status, headers: { get: () => null }, text: async () => JSON.stringify(value) };
 }
 const api = createGitHubReader({ fetchImpl: async (url, init) => {
   seen.push({ url, init }); return typeof body === 'function' ? body(url) : response(body);
