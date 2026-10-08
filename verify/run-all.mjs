@@ -22,6 +22,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   'git-layer',
   'repository-operations',
+  'github-remote',
   'routes',
   'repository-routes',
   'apply',
