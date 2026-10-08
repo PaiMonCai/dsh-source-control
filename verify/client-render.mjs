@@ -833,6 +833,31 @@ async function operationTree(label, { payload = cleanPayload, branches = branchF
   return render(pageComponent, pageProps);
 }
 
+console.log('\n## GitHub navigation from configured remotes');
+reset();
+scripted = {
+  git: catalogFixture,
+  status: { ok: true, value: cleanPayload },
+  branches: { ok: true, value: {
+    ...branchFixture,
+    remotes: [
+      { name: 'origin', github: {
+        url: 'https://github.com/PaiMonCai/dsh-source-control',
+        pullsUrl: 'https://github.com/PaiMonCai/dsh-source-control/pulls',
+        issuesUrl: 'https://github.com/PaiMonCai/dsh-source-control/issues',
+      } },
+      { name: 'backup' },
+    ],
+  } },
+};
+let githubTree = await render(pageComponent, pageProps);
+labelled(githubTree, t('action.more')).props.onClick();
+githubTree = await render(pageComponent, pageProps);
+const githubAnchors = walk(githubTree).filter((node) => node.type === 'a' && typeof node.props.href === 'string' && node.props.href.startsWith('https://github.com/'));
+check(githubAnchors.length === 3 && githubAnchors.some((node) => node.props.href.endsWith('/pulls')) && githubAnchors.some((node) => node.props.href.endsWith('/issues')), 'GitHub repository/PR/Issue links appear in the More menu');
+check(githubAnchors.every((node) => node.props.target === '_blank' && node.props.rel === 'noopener noreferrer'), 'external GitHub navigation is isolated from the DSH app');
+check(networkWrites().length === 0, 'opening GitHub links does not run Git transport');
+
 let opTree = await operationTree(t('action.branches'));
 check(dialogOf(opTree)?.props['aria-label'] === t('action.branches'), 'the branch button opens an actual switch dialog');
 check(networkWrites().length === 0, 'opening branch controls never starts a network write');
