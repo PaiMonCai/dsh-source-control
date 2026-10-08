@@ -858,6 +858,45 @@ check(githubAnchors.length === 3 && githubAnchors.some((node) => node.props.href
 check(githubAnchors.every((node) => node.props.target === '_blank' && node.props.rel === 'noopener noreferrer'), 'external GitHub navigation is isolated from the DSH app');
 check(networkWrites().length === 0, 'opening GitHub links does not run Git transport');
 
+// In-app review: read-only PR details, file patch and Checks.
+reset();
+scripted = {
+  git: catalogFixture,
+  status: { ok: true, value: cleanPayload },
+  branches: { ok: true, value: {
+    ...branchFixture, remotes: [
+      { name: 'origin', github: {
+        url: 'https://github.com/PaiMonCai/dsh-source-control',
+        pullsUrl: 'https://github.com/PaiMonCai/dsh-source-control/pulls',
+        issuesUrl: 'https://github.com/PaiMonCai/dsh-source-control/issues',
+      } },
+    ],
+  } },
+  'github-pulls': { ok: true, value: {
+    items: [{ number: 9, title: 'Add review UI', state: 'open', author: 'tester', draft: false }],
+    limit: 30,
+  } },
+  'github-pull-detail': { ok: true, value: {
+    pull: { number: 9, title: 'Add review UI', state: 'open', author: 'tester', head: 'feature', base: 'main', body: 'Review this change' },
+    files: [{ filename: 'file.ts', additions: 1, deletions: 1, patch: '@@ -1 +1 @@\\n-old\\n+new' }],
+    checks: [{ name: 'CI', status: 'completed', conclusion: 'success' }],
+  } },
+  'github-issues': { ok: true, value: { items: [{ number: 11, title: 'Issue example', state: 'open', author: 'tester' }] } },
+};
+let ghView = await render(pageComponent, pageProps);
+const reviewButton = walk(ghView).find((node) => node.type === 'button' && node.props.title === t('github.review'));
+check(reviewButton !== undefined, 'GitHub review workbench has a discoverable entry');
+reviewButton?.props.onClick();
+ghView = await render(pageComponent, pageProps);
+check(requests.some((entry) => entry.method === 'GET' && entry.target.includes('/github-pulls?')), 'opening GitHub review loads PR list using GET');
+check(textOf(ghView).includes('Add review UI'), 'PR list renders within DSH');
+const selectedPr = walk(ghView).find((node) => node.type === 'button' && node.props.className === 'dsc-gh-entry');
+selectedPr?.props.onClick();
+ghView = await render(pageComponent, pageProps);
+check(requests.some((entry) => entry.method === 'GET' && entry.target.includes('/github-pull-detail?') && entry.target.includes('number=9')), 'PR selection requests detail by number only');
+check(textOf(ghView).includes('Review this change') && textOf(ghView).includes('file.ts'), 'PR detail and changed-file selector render');
+check(networkWrites().length === 0, 'GitHub read-only review never invokes Git transport');
+
 let opTree = await operationTree(t('action.branches'));
 check(dialogOf(opTree)?.props['aria-label'] === t('action.branches'), 'the branch button opens an actual switch dialog');
 check(networkWrites().length === 0, 'opening branch controls never starts a network write');

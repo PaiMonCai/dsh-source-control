@@ -23,6 +23,7 @@ const SUITES = [
   'git-layer',
   'repository-operations',
   'github-remote',
+  'github-api',
   'routes',
   'repository-routes',
   'apply',
