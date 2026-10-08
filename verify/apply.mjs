@@ -2,7 +2,7 @@
  * Verification for the Host plugin wiring.
  *
  * Loads `lib/index.js` against a faithful fake Cordis context and asserts what
- * the plugin registers on the live seams: the eight exact Fetch routes on
+ * the plugin registers on the live seams: the twenty-three exact Fetch routes on
  * `ctx.connection.fetch`, the `session/event` listener that invalidates the
  * repository cache, and full disposal of every registration.
  *
@@ -160,11 +160,12 @@ apply(ctx, {});
 // `registerRoutes` is async and its promise is held by the effect; give it a turn.
 await new Promise((resolve) => setTimeout(resolve, 50));
 
-check(state.fetchRoutes.length === 23, 'apply registers exactly twenty Fetch routes', state.fetchRoutes.length);
+check(state.fetchRoutes.length === 23, 'apply registers exactly twenty-three Fetch routes', state.fetchRoutes.length);
 const paths = state.fetchRoutes.map((route) => route.path);
 for (const operation of ['git', 'status', 'diff', 'log', 'stage', 'unstage', 'discard', 'commit', 'stage-hunk', 'unstage-hunk', 'discard-hunk',
   'branches', 'graph', 'commit-details', 'commit-diff',
-  'switch-branch', 'create-branch', 'fetch', 'pull', 'push']) {
+  'switch-branch', 'create-branch', 'fetch', 'pull', 'push',
+  'github-pulls', 'github-issues', 'github-pull-detail']) {
   check(paths.includes(`${ROUTE_PREFIX}/${operation}`), `the ${operation} route is registered`);
 }
 check(
@@ -189,7 +190,7 @@ console.log('\n## a handler answers an envelope');
 const statusRoute = state.fetchRoutes.find((route) => route.path.endsWith('/status'));
 const response = await statusRoute.fetch(new Request(`http://localhost${ROUTE_PREFIX}/status`, { method: 'GET' }));
 const body = await response.json();
-check(response.status === 230, 'a handler answers HTTP 200', response.status);
+check(response.status === 200, 'a handler answers HTTP 200', response.status);
 check(response.headers.get('content-type')?.includes('application/json') === true, 'the response is JSON');
 check(body.ok === true || typeof body.error?.code === 'string', 'the body carries the envelope', body);
 
