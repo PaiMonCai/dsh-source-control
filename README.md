@@ -45,6 +45,28 @@
 
 当前只读工作台**不包含** PR 创建/审核/合并、Issue 编辑、OAuth 或 GitHub Enterprise。它们需要独立授权、审计、确认机制后才能作为写操作加入。后续可扩展 PR 评论、关联 Issue、分页以及可选私有仓库 OAuth；不应把此只读功能描述成完整 VS Code GitHub 扩展替代品。
 
+## GitHub 授权与私有仓库（第三阶段）
+
+为确保旧用户不受影响，默认 **无 GitHub 凭据、只读匿名公共 API**。需要私有仓库或创建 PR 时，使用 DSH Host 进程的环境变量，并在插件配置里**明确列出允许操作的 GitHub 仓库**：
+
+```yaml
+- id: source-control
+  config:
+    timeoutMs: 30000
+    githubAuth:
+      repositories:
+        - PaiMonCai/private-repo
+      allowWrites: false  # 只有需要创建 PR 时才明确改为 true
+```
+
+在 DSH Host 服务环境（不是浏览器，也不要写到 Git 仓库或 profile 的 YAML 中）配置 `DSH_SOURCE_CONTROL_GITHUB_TOKEN`。推荐使用仅授权上述仓库、仅授予实际所需权限的 GitHub **fine-grained Personal Access Token**。读 PR/Issues、文件差异、CI Checks 时配置相应 Read 权限；需要创建 PR 时额外授予 Pull requests: Write，并把 `allowWrites` 显式打开。重启 DSH Host/重载插件以更新配置，**不要在聊天、前端输入框或仓库中粘贴 token**。
+
+重要的信任边界：这是一个**Host 级别**令牌，而不是用户各自的 OAuth 身份。能够使用此 DSH Host 已认证 Web 界面、访问该仓库的用户，可能共享访问白名单 GitHub 仓库的能力。**多租户/不受信任的多人 DSH 部署请保持禁用**，在支持真正的每用户 OAuth 和权限隔离之前不要启用。白名单只是控制令牌能够被使用的仓库范围，不是每用户 ACL。
+
+创建 PR 要求：当前本地分支已推送到被识别的 GitHub 远程且设置了正确上游，远程跟踪对象 ID 与本地 HEAD 一致，目标分支已存在于远程跟踪列表；表单需要**两次明确点击确认**。该 POST 只创建 GitHub PR，不执行 git push、不自动拉取、不合并、不执行仓库操作。插件不向 Agent 开放此写操作，也不储存 token。
+
+仍未支持：GitHub OAuth 账号登录、跨账号/不同权限的独立授权、私有 GitHub Enterprise、PR 评论与审核、自动合并。启用前需要在目标部署中手工验证访问隔离及权限设置。
+
 ## Agent 工具
 
 `source_control` 通过 UI 调用的同一批服务方法，把本地操作子集暴露给 agent——一份实现，两个调用方。分支变更和远程同步仍是仅限人工的 UI 操作：

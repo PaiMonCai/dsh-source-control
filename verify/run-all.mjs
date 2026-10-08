@@ -24,6 +24,7 @@ const SUITES = [
   'repository-operations',
   'github-remote',
   'github-api',
+  'github-auth',
   'routes',
   'repository-routes',
   'apply',

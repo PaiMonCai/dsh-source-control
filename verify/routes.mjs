@@ -162,7 +162,7 @@ console.log(`# scratch repository: ${repo}\n`);
 
 // ---------------------------------------------------------------------------
 console.log('## route table shape');
-check(routes.size === 23, 'twenty-three routes are registered', routes.size);
+check(routes.size === 24, 'twenty-four routes are registered', routes.size);
 check([...routes.keys()].every((path) => path.startsWith('/api/')), 'every route lives below /api');
 check(
   [...routes.keys()].every((path) => path.split('/').every((segment) => segment === '' || /^[A-Za-z0-9_$.-]+$/.test(segment))),
@@ -171,13 +171,40 @@ check(
 const reads = routeTable(service).filter((route) => route.read);
 const writes = routeTable(service).filter((route) => !route.read);
 check(reads.length === 11, 'eleven routes are read-only', reads.map((route) => route.path));
-check(writes.length === 12, 'twelve routes mutate the repository', writes.map((route) => route.path));
+check(writes.length === 13, 'thirteen routes mutate the repository', writes.map((route) => route.path));
+check(writes.some((route) => route.path === `${ROUTE_PREFIX}/github-create-pull` && route.methods[0] === 'POST'), 'GitHub PR creation is a separate explicit POST route');
 check(['github-pulls', 'github-issues', 'github-pull-detail'].every((operation) =>
   reads.some((route) => route.path === `${ROUTE_PREFIX}/${operation}`)), 'GitHub review routes are GET-only');
 const badPullId = await invoke('github-pull-detail', { query: { sessionId: SESSION_ID, number: '-2' } });
 check(badPullId.payload.error?.code === 'request/invalid-argument', 'invalid PR number refused without GitHub network');
 const noGithub = await invoke('github-pulls', { query: { sessionId: SESSION_ID } });
 check(noGithub.payload.error?.code === 'github/not-configured', 'a repository with no GitHub remote fails before network');
+const noHostedWrite = await invoke('github-create-pull', { query: { sessionId: SESSION_ID }, body: { title: 'Create PR', base: 'main', confirmed: true } });
+check(noHostedWrite.payload.error?.code === 'github/not-configured', 'PR creation refuses repositories without GitHub remotes');
+
+const ghService = new SourceControlService(ctx, config);
+const ghRemote = { name: 'origin', github: { url: 'https://github.com/example/repo', pullsUrl: 'https://github.com/example/repo/pulls' } };
+let createCalls = 0;
+const data = {
+  remotes: [ghRemote],
+  local: [{ name: 'feature', current: true, hash: 'b'.repeat(40), upstreamTarget: { remote: 'origin', branch: 'feature' } }],
+  remote: [{ remote: 'origin', branch: 'feature', hash: 'b'.repeat(40) }, { remote: 'origin', branch: 'main', hash: 'a'.repeat(40) }],
+};
+ghService.mutate = (_request, op) => op({ root: repo });
+Object.defineProperty(ghService, 'operations', { value: { branches: async () => data } });
+ghService.github = { createPull: async (_identity, details) => { createCalls++; return { pull: { number: 9, ...details } }; } };
+const prWrite = { title: 'Feature ready', body: 'Description', base: 'main', draft: true, confirmed: true };
+const accepted = await ghService.githubCreatePull(prWrite);
+check(accepted.pull.number === 9 && accepted.pull.head === 'feature' && accepted.github.url === ghRemote.github.url, 'PR creation uses current pushed upstream and approved GitHub remote');
+check(createCalls === 1, 'successful PR creation calls the GitHub writer once');
+data.local[0].hash = 'c'.repeat(40);
+try { await ghService.githubCreatePull(prWrite); check(false, 'stale local head refused'); }
+catch (error) { check(error.code === 'github/no-pushed-branch', 'unpushed local HEAD refused before GitHub API'); }
+data.local[0].hash = 'b'.repeat(40);
+try { await ghService.githubCreatePull({ ...prWrite, base: 'unknown' }); check(false, 'unknown base refused'); }
+catch (error) { check(error.code === 'github/invalid-base', 'unfetched target branch refused'); }
+check(createCalls === 1, 'failed source/base validations perform no GitHub write');
+
 check(
   writes.every((route) => route.methods[0] === 'POST'),
   'every mutating route requires POST',
