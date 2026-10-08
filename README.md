@@ -32,6 +32,19 @@
 
 **当前尚未实现：** 插件内的 PR 列表/审核/创建/合并、Issue 搜索、GitHub 账号 OAuth 和 GitHub Actions 面板。后续按只读 → 明确用户授权的写操作逐步扩展，避免一开始就复制 VS Code 插件的全部权限边界。
 
+## GitHub 审查工作台（第二阶段 · 只读）
+
+在已识别 `github.com` remote 的仓库里点击 **GitHub 审查**，无需离开 DSH Web 即可：
+
+- **Pull Requests**：按打开/关闭状态查看最近更新的前 30 条 PR，选择 PR 阅读标题、描述、源/目标分支；
+- **Changed files**：查看前 100 个变更文件，选择文件查看 GitHub 提供的统一 Diff 文本补丁，新增/删除行高亮；
+- **Checks**：读取所选 PR 最新 head commit 的 GitHub Checks（最多 100 条），展示完成状态与结论；
+- **Issues**：查看公开 Issues 首页，选择后可跳转到 GitHub 处理；响应中的 PR 项会排除。
+
+**网络与权限**：以上接口均为认证后的 DSH 内部 GET 路由，由宿主通过 GitHub 公开 REST API 读取。目标仓库**仅**来自 Git 已配置 remote 经白名单解析的 `github.com` URL。不会向浏览器暴露 Git remote 的 Token，也不会向外发送 DSH Cookie；不接受任意 API URL，不跟随重定向，不在后台进行 Git Fetch/Pull/Push。GitHub API 的匿名限流、私有仓库不可见、文本 Diff 太大等情况会显示明确错误或跳转入口。
+
+当前只读工作台**不包含** PR 创建/审核/合并、Issue 编辑、OAuth 或 GitHub Enterprise。它们需要独立授权、审计、确认机制后才能作为写操作加入。后续可扩展 PR 评论、关联 Issue、分页以及可选私有仓库 OAuth；不应把此只读功能描述成完整 VS Code GitHub 扩展替代品。
+
 ## Agent 工具
 
 `source_control` 通过 UI 调用的同一批服务方法，把本地操作子集暴露给 agent——一份实现，两个调用方。分支变更和远程同步仍是仅限人工的 UI 操作：
