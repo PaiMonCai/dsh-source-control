@@ -127,10 +127,11 @@ try {
     return response.json();
   }
   const table = routeTable(service);
-  equal(table.length, 20, 'twenty authenticated Connection registrations');
-  equal(table.filter((row) => row.read).length, 8, 'eight local-only read routes');
+  equal(table.length, 23, 'twenty-three authenticated Connection registrations');
+  equal(table.filter((row) => row.read).length, 11, 'eleven read-only routes');
   equal(table.filter((row) => !row.read).length, 12, 'twelve explicit mutation routes');
   check(table.every((row) => row.methods[0] === (row.read ? 'GET' : 'POST')), 'all mutation routes remain POST-only');
+  check(['github-pulls', 'github-issues', 'github-pull-detail'].every((name) => table.some((route) => route.path === `${ROUTE_PREFIX}/${name}` && route.read)), 'GitHub review endpoints never register as mutations');
   check(table.every((row) => registrations.has(row.path)), 'all descriptors registered through Connection');
 
   for (const [segment, query, name] of [
