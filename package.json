@@ -1,8 +1,8 @@
 {
   "name": "dsh-source-control",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "VS Code-style Source Control for DeepSeek Harness Web UI, with GitHub remote navigation, staged diffs, commits, branches and history.",
+  "description": "VS Code-style Source Control for DeepSeek Harness, including read-only GitHub PR review, checks, issues, diffs and local Git workflow.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
