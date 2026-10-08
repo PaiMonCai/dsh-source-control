@@ -65,5 +65,39 @@ const anonymous = createGitHubReader({ authFor: () => null, fetchImpl: async () 
 check(!anonymous.capabilities(identity).canCreate, 'anonymous user has no PR creation capability');
 try { await anonymous.createPull(identity, { head: 'feature', base: 'main', title: 'Proposed change', confirmed: true }); throw new Error('write allowed'); }
 catch (error) { check(error.code === 'github/write-disabled', 'unapproved PR write refused before network'); }
+
+// Discussions use independent, bounded GET endpoints (issues/comments,
+// pulls/reviews, pulls/comments) with credential-free normalized results.
+const discussionCalls = [];
+const discussionApi = createGitHubReader({
+  authFor: () => 'private-read-credential',
+  fetchImpl: async (url, init) => {
+    discussionCalls.push({ url, init });
+    if (url.includes('/issues/12/comments?')) {
+      return response([{ id: 1, body: 'General conversation', user: { login: 'alice' }, created_at: '2026-10-01T08:00:00Z' }]);
+    }
+    if (url.includes('/pulls/12/reviews?')) {
+      return response([{ id: 2, state: 'APPROVED', body: 'Looks good', user: { login: 'reviewer' }, submitted_at: '2026-10-02T09:00:00Z' }]);
+    }
+    if (url.includes('/pulls/12/comments?')) {
+      return response([{ id: 3, body: 'Fix this expression', path: 'src/index.js', line: 27, user: { login: 'bob' }, created_at: '2026-10-03T09:00:00Z' }]);
+    }
+    throw new Error('unexpected GitHub URL');
+  },
+});
+const discussion = await discussionApi.pullDiscussion(identity, { number: 12 });
+check(discussion.number === 12 && discussion.entries.length === 3, 'three review/comment types normalized');
+check(discussion.entries.map((x) => x.kind).join(',') === 'comment,review,line-comment', 'discussion sorted chronologically');
+check(discussion.entries[1].state === 'APPROVED' && discussion.entries[2].path === 'src/index.js' && discussion.entries[2].line === 27, 'review decision and inline location preserved');
+check(discussionCalls.length === 3 && discussionCalls.every((x) => x.init.method === 'GET' && x.init.redirect === 'error' && x.init.credentials === 'omit'), 'discussion performs three GETs with no redirects or cookies');
+check(discussionCalls.every((x) => x.init.headers.authorization === 'Bearer private-read-credential'), 'private discussion reads use host token only on the server');
+check(!JSON.stringify(discussion).includes('credential'), 'token never appears in browser discussion payload');
+try { await discussionApi.pullDiscussion(identity, { number: '12' }); throw new Error('invalid number accepted'); }
+catch (error) { check(error.code === 'github/invalid-number', 'discussion rejects invalid PR selector before network'); }
+check(discussionCalls.length === 3, 'malformed discussion selector causes no network traffic');
+const invalidApi = createGitHubReader({ fetchImpl: async () => response({ unexpected: 'shape' }) });
+try { await invalidApi.pullDiscussion(identity, { number: 12 }); throw new Error('invalid discussion shape accepted'); }
+catch (error) { check(error.code === 'github/invalid-response', 'invalid discussion payload refused rather than shown as empty'); }
+console.log('ok   GitHub PR discussion read-only, sorted and normalized');
 console.log('ok   GitHub host credential, explicit write gate, and private repo mocks');
 console.log('ok   GitHub public PR / issue / diff / checks reader');
